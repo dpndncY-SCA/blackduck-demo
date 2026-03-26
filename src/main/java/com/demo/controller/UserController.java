@@ -37,7 +37,7 @@ public class UserController {
         Map<String, String> status = new HashMap<>();
         status.put("status", "UP");
         status.put("service", "blackduck-demo");
-        status.put("version", "1.0.0");
+        status.put("version", "1.0.1");
         return status;
     }
 
