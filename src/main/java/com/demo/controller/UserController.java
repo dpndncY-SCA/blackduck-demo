@@ -29,6 +29,9 @@ public class UserController {
 
     @GetMapping("/products")
     public List<Map<String, Object>> getProducts(@RequestParam(required = false) String category) {
+        if (category != null && !category.isEmpty()) {
+            return jdbcTemplate.queryForList("SELECT * FROM products WHERE category = ?", category);
+        }
         return jdbcTemplate.queryForList("SELECT * FROM products");
     }
 
