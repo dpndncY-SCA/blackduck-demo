@@ -69,8 +69,6 @@ jobs:
           path: target/
 
       - name: Run Polaris SAST + SCA
-        id: polaris-scan
-        continue-on-error: true
         uses: blackduck-inc/black-duck-security-scan@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,22 +78,9 @@ jobs:
           polaris_assessment_types:     "SAST,SCA"
           polaris_application_name:     "blackduck-demo"
           polaris_project_name:         "blackduck-demo"
-          polaris_branch_name:          ${{ github.ref_name }}
+          polaris_branch_name:          run-${{ github.run_number }}
           polaris_waitForScan:          true
           polaris_reports_sarif_create: true
-
-      - name: Gate on Polaris result
-        run: |
-          STATUS="${{ steps.polaris-scan.outputs.status }}"
-          echo "Polaris bridge exit code: ${STATUS:-not set}"
-          # Exit 8 = policy violations -> break the build
-          # Exit 2 = Not Run (Polaris dedup, cached clean) -> pass
-          # Exit 0 = clean scan -> pass
-          if [ "${STATUS}" = "8" ]; then
-            echo "::error::Security policy violations detected. Review findings in Polaris UI."
-            exit 1
-          fi
-          echo "Polaris scan complete — no policy-blocking issues detected."
 
   # ════════════════════════════════════════════════════════════════
   # PHASE 3 — Docker Build + Container Image Scan (Black Duck)
