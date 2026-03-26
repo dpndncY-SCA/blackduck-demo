@@ -122,11 +122,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          blackducksca_url:                     ${{ secrets.POLARIS_URL }}
-          blackducksca_token:                   ${{ secrets.POLARIS_ACCESS_TOKEN }}
-          blackducksca_scan_full:               true
-          blackducksca_scan_failure_severities: 'BLOCKER,CRITICAL'
-          detect_scanning_docker_image_name:    ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          polaris_server_url:                ${{ secrets.POLARIS_URL }}
+          polaris_access_token:              ${{ secrets.POLARIS_ACCESS_TOKEN }}
+          polaris_application_name:          "blackduck-demo"
+          polaris_project_name:              "blackduck-demo"
+          polaris_assessment_types:          "SCA"
+          polaris_test_sca_type:             "SCA-SIGNATURE"
+          polaris_test_sca_location:         "REMOTE"
+          polaris_branch_name:               ${{ github.ref_name }}
+          polaris_waitForScan:               true
+          detect_additional_arguments: >-
+            --detect.tools=DOCKER
+            --detect.docker.image=${{ env.IMAGE_NAME }}:${{ github.sha }}
 
   # ════════════════════════════════════════════════════════════════
   # PHASE 4 — DAST (Polaris REST API against live container)
