@@ -132,11 +132,8 @@ jobs:
           polaris_assessment_types:          "SCA"
           polaris_test_sca_type:             "SCA-SIGNATURE"
           polaris_test_sca_location:         "REMOTE"
-          polaris_branch_name:               ${{ github.ref_name }}
+          polaris_branch_name:               run-${{ github.run_number }}
           polaris_waitForScan:               true
-          detect_additional_arguments: >-
-            --detect.tools=DOCKER
-            --detect.docker.image=${{ env.IMAGE_NAME }}:${{ github.sha }}
 
   # ════════════════════════════════════════════════════════════════
   # PHASE 4 — DAST (Polaris REST API against live container)
