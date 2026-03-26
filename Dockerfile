@@ -8,7 +8,7 @@ COPY src ./src
 RUN mvn package -DskipTests -q
 
 # ── Stage 2: Runtime ────────────────────────────────────────────
-FROM openjdk:11-jre-slim
+FROM eclipse-temurin:11-jre-jammy
 WORKDIR /app
 
 # Non-root user for security
