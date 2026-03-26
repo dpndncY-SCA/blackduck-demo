@@ -78,8 +78,6 @@ jobs:
           polaris_branch_name:      ${{ github.ref_name }}
           polaris_waitForScan:      true
           polaris_reports_sarif_create: true
-          polaris_reports_sbom_create: true
-          polaris_reports_sbom_type:   SPDX_23
 
   # ════════════════════════════════════════════════════════════════
   # PHASE 3 — Docker Build + Container Image Scan (Black Duck)
@@ -119,15 +117,16 @@ jobs:
           docker push $IMAGE_NAME:${{ github.sha }}
           docker push $IMAGE_NAME:latest
 
-      - name: Black Duck Container Scan
+      - name: Black Duck Container Scan (Polaris)
         uses: blackduck-inc/black-duck-security-scan@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          blackduck_url:                     ${{ secrets.POLARIS_URL }}
-          blackduck_token:                   ${{ secrets.POLARIS_ACCESS_TOKEN }}
-          blackduck_scan_full:               true
-          blackduck_scan_failure_severities: 'BLOCKER,CRITICAL'
+          blackducksca_url:                     ${{ secrets.POLARIS_URL }}
+          blackducksca_token:                   ${{ secrets.POLARIS_ACCESS_TOKEN }}
+          blackducksca_scan_full:               true
+          blackducksca_scan_failure_severities: 'BLOCKER,CRITICAL'
+          detect_scanning_docker_image_name:    ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
   # ════════════════════════════════════════════════════════════════
   # PHASE 4 — DAST (Polaris REST API against live container)
