@@ -1,0 +1,207 @@
+name: "CI — Build, Test & Deploy"
+
+on:
+  push:
+    branches: [ main, "fix/**" ]
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: ghcr.io/dpndncy-sca/blackduck-demo
+  APP_PORT: 8080
+
+jobs:
+
+  # ════════════════════════════════════════════════════════════════
+  # PHASE 1 — Build
+  # ════════════════════════════════════════════════════════════════
+  build:
+    name: "Phase 1 — Maven Build"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn package -DskipTests
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: target/*.jar
+          retention-days: 1
+
+  # ════════════════════════════════════════════════════════════════
+  # PHASE 2 — SAST + SCA (Polaris)
+  # BUILD BREAKS on first run:
+  #   - CWE-89 SQL Injection      (SAST / Coverity)
+  #   - CVE-2021-44228 Log4Shell  (SCA  / Black Duck)
+  # ════════════════════════════════════════════════════════════════
+  sast-sca-scan:
+    name: "Phase 2 — SAST + SCA (Polaris)"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-jar
+          path: target/
+
+      - name: Run Polaris SAST + SCA
+        uses: blackduck-inc/black-duck-security-scan@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          polaris_server_url:       ${{ secrets.POLARIS_URL }}
+          polaris_access_token:     ${{ secrets.POLARIS_ACCESS_TOKEN }}
+          polaris_assessment_types: "SAST,SCA"
+          polaris_application_name: "blackduck-demo"
+          polaris_project_name:     "blackduck-demo"
+          polaris_branch_name:      ${{ github.ref_name }}
+          polaris_waitForScan:      true
+          polaris_reports_sarif_create: true
+          polaris_reports_sbom_create: true
+          polaris_reports_sbom_type:   SPDX_23
+
+  # ════════════════════════════════════════════════════════════════
+  # PHASE 3 — Docker Build + Container Image Scan (Black Duck)
+  # ════════════════════════════════════════════════════════════════
+  container-scan:
+    name: "Phase 3 — Docker Build + Container Scan"
+    needs: sast-sca-scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build JAR
+        run: mvn package -DskipTests -q
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t $IMAGE_NAME:${{ github.sha }} \
+                       -t $IMAGE_NAME:latest .
+          docker push $IMAGE_NAME:${{ github.sha }}
+          docker push $IMAGE_NAME:latest
+
+      - name: Black Duck Container Scan
+        uses: blackduck-inc/black-duck-security-scan@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          blackduck_url:                     ${{ secrets.POLARIS_URL }}
+          blackduck_token:                   ${{ secrets.POLARIS_ACCESS_TOKEN }}
+          blackduck_scan_full:               true
+          blackduck_scan_failure_severities: 'BLOCKER,CRITICAL'
+
+  # ════════════════════════════════════════════════════════════════
+  # PHASE 4 — DAST (Polaris REST API against live container)
+  # ════════════════════════════════════════════════════════════════
+  dast-scan:
+    name: "Phase 4 — DAST Scan (Polaris)"
+    needs: container-scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Start application container
+        run: |
+          docker pull $IMAGE_NAME:${{ github.sha }}
+          docker run -d --name demo-app -p $APP_PORT:$APP_PORT \
+            $IMAGE_NAME:${{ github.sha }}
+          echo "Waiting for app to be ready..."
+          for i in $(seq 1 12); do
+            if curl -sf http://localhost:$APP_PORT/api/health; then
+              echo "App is ready."
+              break
+            fi
+            echo "Attempt $i — retrying in 5s..."
+            sleep 5
+          done
+
+      - name: Trigger Polaris DAST Scan
+        env:
+          POLARIS_URL:          ${{ secrets.POLARIS_URL }}
+          POLARIS_ACCESS_TOKEN: ${{ secrets.POLARIS_ACCESS_TOKEN }}
+        run: |
+          # Create DAST scan via Polaris REST API
+          SCAN_RESPONSE=$(curl -sf -X POST \
+            "$POLARIS_URL/api/dast/v1/scans" \
+            -H "Authorization: Bearer $POLARIS_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "projectName":  "blackduck-demo",
+              "branchName":   "${{ github.ref_name }}",
+              "targetUrl":    "http://localhost:${{ env.APP_PORT }}",
+              "scanMode":     "STANDARD"
+            }')
+          echo "Scan created: $SCAN_RESPONSE"
+          SCAN_ID=$(echo $SCAN_RESPONSE | jq -r '.id')
+          echo "SCAN_ID=$SCAN_ID" >> $GITHUB_ENV
+
+      - name: Wait for DAST scan to complete
+        env:
+          POLARIS_URL:          ${{ secrets.POLARIS_URL }}
+          POLARIS_ACCESS_TOKEN: ${{ secrets.POLARIS_ACCESS_TOKEN }}
+        run: |
+          echo "Polling DAST scan status..."
+          for i in $(seq 1 30); do
+            STATUS=$(curl -sf \
+              "$POLARIS_URL/api/dast/v1/scans/$SCAN_ID" \
+              -H "Authorization: Bearer $POLARIS_ACCESS_TOKEN" \
+              | jq -r '.status')
+            echo "Status: $STATUS"
+            if [ "$STATUS" = "COMPLETED" ] || [ "$STATUS" = "FAILED" ]; then
+              break
+            fi
+            sleep 60
+          done
+
+      - name: Stop and remove container
+        if: always()
+        run: |
+          docker stop demo-app || true
+          docker rm   demo-app || true
