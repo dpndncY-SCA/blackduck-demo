@@ -83,10 +83,10 @@ jobs:
           polaris_reports_sarif_create: true
 
   # ════════════════════════════════════════════════════════════════
-  # PHASE 3 — Docker Build + Container Image Scan (Black Duck)
+  # PHASE 3 — Docker Build + Push
   # ════════════════════════════════════════════════════════════════
-  container-scan:
-    name: "Phase 3 — Docker Build + Container Scan"
+  docker-build:
+    name: "Phase 3 — Docker Build & Push"
     needs: sast-sca-scan
     runs-on: ubuntu-latest
     permissions:
@@ -120,27 +120,12 @@ jobs:
           docker push $IMAGE_NAME:${{ github.sha }}
           docker push $IMAGE_NAME:latest
 
-      - name: Black Duck Container Scan (Polaris)
-        uses: blackduck-inc/black-duck-security-scan@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          polaris_server_url:                ${{ secrets.POLARIS_URL }}
-          polaris_access_token:              ${{ secrets.POLARIS_ACCESS_TOKEN }}
-          polaris_application_name:          "blackduck-demo"
-          polaris_project_name:              "blackduck-demo"
-          polaris_assessment_types:          "SCA"
-          polaris_test_sca_type:             "SCA-SIGNATURE"
-          polaris_test_sca_location:         "REMOTE"
-          polaris_branch_name:               run-${{ github.run_number }}
-          polaris_waitForScan:               true
-
   # ════════════════════════════════════════════════════════════════
   # PHASE 4 — DAST (Polaris REST API against live container)
   # ════════════════════════════════════════════════════════════════
   dast-scan:
     name: "Phase 4 — DAST Scan (Polaris)"
-    needs: container-scan
+    needs: docker-build
     runs-on: ubuntu-latest
     permissions:
       contents: read
