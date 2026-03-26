@@ -28,7 +28,7 @@ public class UserController {
     }
 
     @GetMapping("/products")
-    public List<Map<String, Object>> getProducts() {
+    public List<Map<String, Object>> getProducts(@RequestParam(required = false) String category) {
         return jdbcTemplate.queryForList("SELECT * FROM products");
     }
 
