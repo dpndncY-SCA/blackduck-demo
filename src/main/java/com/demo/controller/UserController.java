@@ -24,9 +24,7 @@ public class UserController {
      */
     @GetMapping("/users")
     public List<Map<String, Object>> getUsers(@RequestParam String name) {
-        // VULNERABLE: user input concatenated directly into SQL query
-        String query = "SELECT * FROM users WHERE name = '" + name + "'";
-        return jdbcTemplate.queryForList(query);
+        return jdbcTemplate.queryForList("SELECT * FROM users WHERE name = ?", name);
     }
 
     @GetMapping("/products")
