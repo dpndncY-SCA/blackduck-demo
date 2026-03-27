@@ -153,15 +153,26 @@ jobs:
             sleep 5
           done
 
-      - name: Trigger Polaris DAST Scan
+      - name: Authenticate to Polaris (get JWT)
         env:
           POLARIS_URL:          ${{ secrets.POLARIS_URL }}
           POLARIS_ACCESS_TOKEN: ${{ secrets.POLARIS_ACCESS_TOKEN }}
         run: |
-          # Create DAST scan via Polaris REST API
+          JWT=$(curl -sf -X POST \
+            "$POLARIS_URL/api/auth/v1/authenticate" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -H "Accept: application/json" \
+            --data-urlencode "accesstoken=$POLARIS_ACCESS_TOKEN" \
+            | jq -r '.jwt')
+          echo "POLARIS_JWT=$JWT" >> $GITHUB_ENV
+
+      - name: Trigger Polaris DAST Scan
+        env:
+          POLARIS_URL: ${{ secrets.POLARIS_URL }}
+        run: |
           SCAN_RESPONSE=$(curl -sf -X POST \
             "$POLARIS_URL/api/dast/v1/scans" \
-            -H "Authorization: Bearer $POLARIS_ACCESS_TOKEN" \
+            -H "Authorization: Bearer $POLARIS_JWT" \
             -H "Content-Type: application/json" \
             -d '{
               "projectName":  "blackduck-demo",
@@ -175,14 +186,13 @@ jobs:
 
       - name: Wait for DAST scan to complete
         env:
-          POLARIS_URL:          ${{ secrets.POLARIS_URL }}
-          POLARIS_ACCESS_TOKEN: ${{ secrets.POLARIS_ACCESS_TOKEN }}
+          POLARIS_URL: ${{ secrets.POLARIS_URL }}
         run: |
           echo "Polling DAST scan status..."
           for i in $(seq 1 30); do
             STATUS=$(curl -sf \
               "$POLARIS_URL/api/dast/v1/scans/$SCAN_ID" \
-              -H "Authorization: Bearer $POLARIS_ACCESS_TOKEN" \
+              -H "Authorization: Bearer $POLARIS_JWT" \
               | jq -r '.status')
             echo "Status: $STATUS"
             if [ "$STATUS" = "COMPLETED" ] || [ "$STATUS" = "FAILED" ]; then
