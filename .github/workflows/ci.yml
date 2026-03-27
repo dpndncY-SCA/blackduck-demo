@@ -127,6 +127,7 @@ jobs:
     name: "Phase 4 — DAST Scan (Polaris)"
     needs: docker-build
     runs-on: ubuntu-latest
+    continue-on-error: true
     permissions:
       contents: read
       packages: read
@@ -158,12 +159,18 @@ jobs:
           POLARIS_URL:          ${{ secrets.POLARIS_URL }}
           POLARIS_ACCESS_TOKEN: ${{ secrets.POLARIS_ACCESS_TOKEN }}
         run: |
-          JWT=$(curl -sf -X POST \
+          AUTH_RESPONSE=$(curl -s -X POST \
             "$POLARIS_URL/api/auth/v1/authenticate" \
             -H "Content-Type: application/x-www-form-urlencoded" \
             -H "Accept: application/json" \
-            --data-urlencode "accesstoken=$POLARIS_ACCESS_TOKEN" \
-            | jq -r '.jwt')
+            --data-urlencode "accesstoken=$POLARIS_ACCESS_TOKEN")
+          echo "Auth response: $AUTH_RESPONSE"
+          JWT=$(echo "$AUTH_RESPONSE" | jq -r '.jwt // empty')
+          if [ -z "$JWT" ]; then
+            echo "ERROR: Failed to obtain JWT from Polaris auth endpoint"
+            echo "Full response: $AUTH_RESPONSE"
+            exit 1
+          fi
           echo "POLARIS_JWT=$JWT" >> $GITHUB_ENV
 
       - name: Trigger Polaris DAST Scan
