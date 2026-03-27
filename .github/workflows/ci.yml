@@ -161,9 +161,9 @@ jobs:
         run: |
           AUTH_RESPONSE=$(curl -s -X POST \
             "$POLARIS_URL/api/auth/v1/authenticate" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
+            -H "Content-Type: application/json" \
             -H "Accept: application/json" \
-            --data-urlencode "accesstoken=$POLARIS_ACCESS_TOKEN")
+            -d "{\"accesstoken\": \"$POLARIS_ACCESS_TOKEN\"}")
           echo "Auth response: $AUTH_RESPONSE"
           JWT=$(echo "$AUTH_RESPONSE" | jq -r '.jwt // empty')
           if [ -z "$JWT" ]; then
